@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .objects import ChannelChromatograms, Chromatogram
 
 
+# Baseline functions
 def min_subtract(data: pd.DataFrame) -> pd.Series:
     """
     Simple minimum subtraction baseline correction
@@ -74,12 +75,17 @@ def time_point_baseline(data: pd.DataFrame, time_point: float) -> pd.Series:
     return data[signal_col] - baseline_value  # type: ignore[operator]
 
 
-def two_point_baseline(data: pd.DataFrame) -> pd.Series:
+def linear_baseline(
+    data: pd.DataFrame, start_time: float, end_time: float
+) -> pd.Series:
     """
-    Use linear baseline defined by two time points.
+    Determines a linear baseline between the signal values at the two specified time points and
+    subtracts it from the signal.
 
     Args:
         data: DataFrame containing time and signal columns
+        start_time: Time point to define the start of the baseline. Use the same unit as the chromatogram.
+        end_time: Time point to define the end of the baseline. Use the same unit as the chromatogram.
 
     Returns:
         Corrected signal as pandas Series
@@ -87,37 +93,29 @@ def two_point_baseline(data: pd.DataFrame) -> pd.Series:
     time_col = data.columns[0]  # "Time (min)"
     signal_col = data.columns[1]
 
-    # Create linear baseline based on first and last point
-    baseline = np.linspace(data[signal_col].iloc[0], data[signal_col].iloc[-1], len(data))
+    # Find the closest data points to the specified times
+    start_diff = (data[time_col] - start_time).abs()
+    end_diff = (data[time_col] - end_time).abs()
+    start_index = start_diff.idxmin()
+    end_index = end_diff.idxmin()
 
-    return data[signal_col] - baseline  # type: ignore[operator]
+    # Get the signal values at these points
+    start_value = data.loc[start_index, signal_col]
+    end_value = data.loc[end_index, signal_col]
+
+    # Calculate the slope and intercept of the baseline line
+    slope = (end_value - start_value) / (  # type: ignore[operator]
+        data.loc[end_index, time_col] - data.loc[start_index, time_col]
+    )
+    intercept = start_value - slope * data.loc[start_index, time_col]  # type: ignore[operator]
+
+    # Calculate the baseline for each time point
+    baseline = slope * data[time_col] + intercept  # type: ignore[operator]
+
+    return data[signal_col] - baseline
 
 
-def integrate_single_peak(
-    data: pd.DataFrame, boundaries: tuple[float, float], baseline = None, **kwargs) -> float:
-    """
-    Integrate a single peak in a chromatogram DataFrame.
-
-    Args:
-        data: DataFrame containing time and signal columns
-        boundaries: Tuple specifying the start and end time of the peak to integrate. Use the same unit as the chromatogram.
-        baseline: Optional baseline function to apply to the peak before integration. If None, no baseline correction is applied
-        **kwargs: Additional keyword arguments to pass to the baseline function
-
-    Returns:
-        Integrated peak area as float
-    """
-    start_point, end_point = boundaries
-    time_col = data.columns[0]  # "Time (min)"
-    signal_col = data.columns[1]
-
-    if baseline is not None:
-        data[signal_col] = baseline(data, **kwargs)
-
-    # Select datapoints in the specified peak window
-    mask = (data[time_col] >= start_point) & (data[time_col] <= end_point)
-    area = trapezoid(data.loc[mask, signal_col], data.loc[mask, time_col])
-    return area
+# Integration functions
 
 
 def integrate_single_chromatogram(
@@ -357,5 +355,10 @@ def split_chromatogram(
 
 
 def list_baseline_functions():
-    baseline_functions = ["min_subtract", "time_window_baseline", "time_point_baseline", "two_point_baseline"]
+    baseline_functions = [
+        "min_subtract",
+        "time_window_baseline",
+        "time_point_baseline",
+        "linear_baseline",
+    ]
     return "\n".join(baseline_functions)
