@@ -305,7 +305,7 @@ def parse_inject_time(inject_time: str, metadata: dict) -> pd.Timestamp:
     else:
         try:
             # Attempt to parse as ISO 8601 format
-            time = pd.to_datetime(inject_time).tz_localize(None)
+            time = pd.to_datetime(inject_time, dayfirst=True).tz_localize(None)
             log.info(f"Time format not handled, but succeeded parsing with: {time}")
             return time
         except Exception:
@@ -430,6 +430,10 @@ def detect_log_type(file_path: str | Path) -> str:
     # Check for Robert type - has "Power Out %" and "Stirrer" columns
     if any("Power Out %" in line and "Stirrer" in line for line in lines):
         return "Robert"
+    
+    # Check for SMR type - has Date/Time column
+    if any("Date/Time" in line for line in lines):
+        return "SMR"
 
     return "unknown"
 
@@ -711,6 +715,33 @@ def parse_log_type_robert(file_path: str | Path) -> pd.DataFrame:
     return df
 
 
+def parse_log_type_smr(logfile_path: str | Path) -> pd.DataFrame:
+    logfile = pd.read_csv(logfile_path, sep='\t', skiprows=1)
+    logfile['Timestamp'] = pd.to_datetime(logfile['Date/Time'], format='%d-%m-%Y %H:%M:%S') # 05-11-2025 14:31:32
+    logfile.rename(columns={
+        'Ar HF sp': 'Ar_HF_sp',
+        'Ar HF pv': 'Ar_HF_pv',
+        'Ar LF sp': 'Ar_LF_sp',
+        'Ar LF pv': 'Ar_LF_pv',
+        'CO2 sp': 'CO2_sp',
+        'CO2 pv': 'CO2_pv',
+        'CO sp': 'CO_sp',
+        'CO pv': 'CO_pv',
+        'H2 sp': 'H2_sp',
+        'H2 pv': 'H2_pv',
+        'CH4 sp': 'CH4_sp',
+        'CH4 pv': 'CH4_pv',
+        'P1 (inlet)': 'P1_inlet',
+        'P2 (outlet)': 'P2_outlet',
+        'Valve to Reactor': 'Valve_to_Reactor',
+        'Temp oven 1': 'Oven_temp',
+        'Temp Evap': 'Temp_Evap',
+        'BPC SP': 'BPC_SP',
+        'BPC PV': 'BPC_PV'
+    }, inplace=True)
+    return logfile
+
+
 def parse_log_file(file_path: str | Path) -> pd.DataFrame:
     """
     Automatically detect and parse any supported log file type. To be extended.
@@ -739,6 +770,9 @@ def parse_log_file(file_path: str | Path) -> pd.DataFrame:
         return parse_log_type_lpir(file_path)
     elif log_type == "Robert":
         return parse_log_type_robert(file_path)
+    elif log_type == "SMR":
+        print('SMR log file detected.')
+        return parse_log_type_smr(file_path)
     else:
         raise ValueError(
             f"Unsupported or unrecognized log file type: {log_type}. Parse the data manually."

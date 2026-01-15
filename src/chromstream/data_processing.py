@@ -145,6 +145,11 @@ def integrate_single_chromatogram(
     injection_result = {"Timestamp": chromatogram.injection_time}
 
     for peak_name, (start, end) in peaklist.items():
+        if start <= data[time_col].min() or end >= data[time_col].max():
+            injection_result[peak_name] = np.nan
+            print(f'Warning: peak "{peak_name}" is out of bounds. Skipping integration.')
+            continue
+
         # Create a mask for the time window
         mask = (data[time_col] >= start) & (data[time_col] <= end)
 
